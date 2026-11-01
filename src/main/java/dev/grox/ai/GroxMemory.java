@@ -11,6 +11,7 @@ public final class GroxMemory {
     public int trust;
     public int fear;
     public int mood;
+    public int interactions;
     public long lastThreat;
     public final List<String> memories = new ArrayList<>();
 
@@ -20,6 +21,7 @@ public final class GroxMemory {
         this.trust = 35;
         this.fear = 0;
         this.mood = 50;
+        this.interactions = 0;
     }
 
     public void remember(String text) {
@@ -34,6 +36,7 @@ public final class GroxMemory {
         n.putInt("Trust", trust);
         n.putInt("Fear", fear);
         n.putInt("Mood", mood);
+        n.putInt("Interactions", interactions);
         n.putLong("LastThreat", lastThreat);
         n.putInt("MemoryCount", memories.size());
         for (int i = 0; i < memories.size(); i++) n.putString("Memory" + i, memories.get(i));
@@ -47,6 +50,7 @@ public final class GroxMemory {
         m.trust = n.getInt("Trust");
         m.fear = n.getInt("Fear");
         m.mood = n.getInt("Mood");
+        m.interactions = n.getInt("Interactions");
         m.lastThreat = n.getLong("LastThreat");
         int count = Math.min(64, n.getInt("MemoryCount"));
         for (int i = 0; i < count; i++) m.memories.add(n.getString("Memory" + i));
