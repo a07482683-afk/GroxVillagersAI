@@ -25,12 +25,9 @@ public class GroxVillagersAI implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // ЛКМ начинает разговор. Shift + ЛКМ показывает характеристики только в Creative.
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (world.isClient || !(entity instanceof VillagerEntity villager)
-                    || !(player instanceof ServerPlayerEntity serverPlayer)) {
-                return ActionResult.PASS;
-            }
+                    || !(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
 
             if (serverPlayer.isSneaking()) {
                 if (!serverPlayer.isCreative()) return ActionResult.PASS;
@@ -41,25 +38,20 @@ public class GroxVillagersAI implements ModInitializer {
             ServerWorld serverWorld = (ServerWorld) world;
             GroxMemory m = memory(serverWorld, villager);
             m.interactions++;
+            m.social = Math.min(100, m.social + 2);
+            m.curiosity = Math.min(100, m.curiosity + 1);
             m.remember("Игрок подошёл и начал разговор.");
             m.trust = Math.min(100, m.trust + 1);
             markStoreDirty(serverWorld);
-            String answer = GroxDialogue.greeting(m, villager);
             serverPlayer.sendMessage(Text.literal("§6[" + villager.getName().getString()
-                    + "] §f" + answer), false);
+                    + "] §f" + GroxDialogue.greeting(m, villager)), false);
             return ActionResult.SUCCESS;
         });
 
-        // ПКМ оставлен Minecraft: обычная торговля не перехватывается.
-        // Shift + ПКМ показывает параметры только в Creative.
         UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
             if (world.isClient || !(entity instanceof VillagerEntity villager)
-                    || !(player instanceof ServerPlayerEntity serverPlayer)) {
-                return ActionResult.PASS;
-            }
-            if (!serverPlayer.isSneaking() || !serverPlayer.isCreative()) {
-                return ActionResult.PASS;
-            }
+                    || !(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
+            if (!serverPlayer.isSneaking() || !serverPlayer.isCreative()) return ActionResult.PASS;
             sendStats(serverPlayer, memory((ServerWorld) world, villager));
             return ActionResult.SUCCESS;
         });
@@ -75,12 +67,13 @@ public class GroxVillagersAI implements ModInitializer {
                         context.getSource().sendFeedback(() -> Text.literal("§cРядом нет жителей."), false);
                         return 0;
                     }
-
                     VillagerEntity villager = nearby.get(0);
                     GroxMemory m = memory(world, villager);
                     String message = StringArgumentType.getString(context, "message");
                     m.remember("Игрок: " + message);
                     m.interactions++;
+                    m.social = Math.min(100, m.social + 3);
+                    m.curiosity = Math.min(100, m.curiosity + 2);
                     updateRelationship(message, m);
                     markStoreDirty(world);
                     String answer = GroxDialogue.answer(message, m, villager);
@@ -122,7 +115,8 @@ public class GroxVillagersAI implements ModInitializer {
     private static void sendStats(ServerPlayerEntity player, GroxMemory memory) {
         player.sendMessage(Text.literal("§6[Грокс] §fСмелость: " + memory.bravery
                 + " | Доверие: " + memory.trust + " | Страх: " + memory.fear
-                + " | Настроение: " + memory.mood
+                + " | Настроение: " + memory.mood + " | Общительность: " + memory.social
+                + " | Любопытство: " + memory.curiosity
                 + " | Разговоров: " + memory.interactions), false);
     }
 
@@ -152,15 +146,31 @@ public class GroxVillagersAI implements ModInitializer {
                 double dx = villager.getX() - threat.getX();
                 double dz = villager.getZ() - threat.getZ();
                 double length = Math.max(0.1, Math.sqrt(dx * dx + dz * dz));
-                villager.getNavigation().startMovingTo(
-                        villager.getX() + dx / length * 7,
-                        villager.getY(),
-                        villager.getZ() + dz / length * 7, 1.15);
+                villager.getNavigation().startMovingTo(villager.getX() + dx / length * 7,
+                        villager.getY(), villager.getZ() + dz / length * 7, 1.15);
             }
         } else {
             if (m.fear > 0) m.fear = Math.max(0, m.fear - 2);
             if (m.mood < 75) m.mood++;
         }
-        markStoreDirty(world);
+
+        // Social stage: nearby villagers gradually become more sociable.
+        if (world.getTime() % 200 == 0) {
+            List<VillagerEntity> neighbors = world.getEntitiesByClass(VillagerEntity.class,
+                    villager.getBoundingBox().expand(6), other -> other != villager && other.isAlive());
+            if (!neighbors.isEmpty()) {
+                m.social = Math.min(100, m.social + 2);
+                m.mood = Math.min(100, m.mood + 1);
+                m.trust = Math.min(100, m.trust + 1);
+                if (world.random.nextInt(4) == 0) m.remember("Провёл время рядом с другими жителями.");
+            } else {
+                m.social = Math.max(0, m.social - 1);
+            }
+            if (villager.isSleeping()) {
+                m.fear = Math.max(0, m.fear - 2);
+                m.mood = Math.min(100, m.mood + 2);
+            }
+            markStoreDirty(world);
+        }
     }
 }
