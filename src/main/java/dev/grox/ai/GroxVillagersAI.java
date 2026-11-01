@@ -14,6 +14,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.Box;
+
 import java.util.List;
 
 import static net.minecraft.server.command.CommandManager.argument;
@@ -24,32 +25,42 @@ public class GroxVillagersAI implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Left-click: talk to the villager instead of hurting it.
-        // Sneak + left-click: show personality stats (works in Survival too).
+        // ЛКМ начинает разговор. Shift + ЛКМ показывает характеристики только в Creative.
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (world.isClient || !(entity instanceof VillagerEntity villager)) return ActionResult.PASS;
+            if (world.isClient || !(entity instanceof VillagerEntity villager)
+                    || !(player instanceof ServerPlayerEntity serverPlayer)) {
+                return ActionResult.PASS;
+            }
+
+            if (serverPlayer.isSneaking()) {
+                if (!serverPlayer.isCreative()) return ActionResult.PASS;
+                sendStats(serverPlayer, memory((ServerWorld) world, villager));
+                return ActionResult.SUCCESS;
+            }
+
             ServerWorld serverWorld = (ServerWorld) world;
             GroxMemory m = memory(serverWorld, villager);
-            if (player.isSneaking()) {
-                sendStats(player, m);
-            } else {
-                m.interactions++;
-                m.remember("Игрок подошёл и заговорил.");
-                markStoreDirty(serverWorld);
-                String answer = GroxDialogue.greeting(m, villager);
-                player.sendMessage(Text.literal("§6[Житель] §f" + answer), false);
-            }
+            m.interactions++;
+            m.remember("Игрок подошёл и начал разговор.");
+            m.trust = Math.min(100, m.trust + 1);
+            markStoreDirty(serverWorld);
+            String answer = GroxDialogue.greeting(m, villager);
+            serverPlayer.sendMessage(Text.literal("§6[" + villager.getName().getString()
+                    + "] §f" + answer), false);
             return ActionResult.SUCCESS;
         });
 
-        // Normal right-click is deliberately passed to Minecraft so trading,
-        // profession screens and other vanilla villager interactions still work.
-        // Sneak + right-click remains a quick personality panel.
+        // ПКМ оставлен Minecraft: обычная торговля не перехватывается.
+        // Shift + ПКМ показывает параметры только в Creative.
         UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
-            if (world.isClient || !(entity instanceof VillagerEntity villager)) return ActionResult.PASS;
-            if (!player.isSneaking()) return ActionResult.PASS;
-            GroxMemory m = memory((ServerWorld) world, villager);
-            sendStats(player, m);
+            if (world.isClient || !(entity instanceof VillagerEntity villager)
+                    || !(player instanceof ServerPlayerEntity serverPlayer)) {
+                return ActionResult.PASS;
+            }
+            if (!serverPlayer.isSneaking() || !serverPlayer.isCreative()) {
+                return ActionResult.PASS;
+            }
+            sendStats(serverPlayer, memory((ServerWorld) world, villager));
             return ActionResult.SUCCESS;
         });
 
@@ -64,16 +75,17 @@ public class GroxVillagersAI implements ModInitializer {
                         context.getSource().sendFeedback(() -> Text.literal("§cРядом нет жителей."), false);
                         return 0;
                     }
+
                     VillagerEntity villager = nearby.get(0);
                     GroxMemory m = memory(world, villager);
                     String message = StringArgumentType.getString(context, "message");
                     m.remember("Игрок: " + message);
                     m.interactions++;
-                    m.trust = Math.min(100, m.trust + 1);
-                    m.mood = Math.min(100, m.mood + 1);
+                    updateRelationship(message, m);
                     markStoreDirty(world);
                     String answer = GroxDialogue.answer(message, m, villager);
-                    context.getSource().sendFeedback(() -> Text.literal("§6[" + villager.getName().getString() + "] §f" + answer), false);
+                    context.getSource().sendFeedback(() -> Text.literal("§6["
+                            + villager.getName().getString() + "] §f" + answer), false);
                     return 1;
                 }))
             )
@@ -83,17 +95,35 @@ public class GroxVillagersAI implements ModInitializer {
             if (++tickCounter % 40 != 0) return;
             for (ServerPlayerEntity player : world.getPlayers()) {
                 Box area = player.getBoundingBox().expand(48);
-                for (VillagerEntity villager : world.getEntitiesByClass(VillagerEntity.class, area, v -> v.isAlive())) {
+                for (VillagerEntity villager : world.getEntitiesByClass(VillagerEntity.class,
+                        area, v -> v.isAlive())) {
                     think(world, villager);
                 }
             }
         });
     }
 
-    private static void sendStats(net.minecraft.server.network.ServerPlayerEntity player, GroxMemory memory) {
-        player.sendMessage(Text.literal("§6[Грокс] §fХарактер: смелость " + memory.bravery
-                + ", доверие " + memory.trust + ", страх " + memory.fear
-                + ", настроение " + memory.mood + ", разговоров " + memory.interactions), false);
+    private static void updateRelationship(String message, GroxMemory m) {
+        String s = message.toLowerCase(java.util.Locale.ROOT);
+        if (s.contains("спасибо") || s.contains("помог") || s.contains("друг")
+                || s.contains("привет") || s.contains("здравств")) {
+            m.trust = Math.min(100, m.trust + 3);
+            m.mood = Math.min(100, m.mood + 4);
+            m.fear = Math.max(0, m.fear - 2);
+        } else if (s.contains("угрож") || s.contains("убью") || s.contains("ненавиж")) {
+            m.trust = Math.max(0, m.trust - 8);
+            m.mood = Math.max(0, m.mood - 8);
+            m.fear = Math.min(100, m.fear + 8);
+        } else {
+            m.mood = Math.min(100, m.mood + 1);
+        }
+    }
+
+    private static void sendStats(ServerPlayerEntity player, GroxMemory memory) {
+        player.sendMessage(Text.literal("§6[Грокс] §fСмелость: " + memory.bravery
+                + " | Доверие: " + memory.trust + " | Страх: " + memory.fear
+                + " | Настроение: " + memory.mood
+                + " | Разговоров: " + memory.interactions), false);
     }
 
     private static GroxMemory memory(ServerWorld world, VillagerEntity villager) {
