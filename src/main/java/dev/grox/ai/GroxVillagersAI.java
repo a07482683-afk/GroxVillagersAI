@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.entity.Entity;
@@ -16,6 +17,8 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.Box;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
@@ -84,6 +87,12 @@ public class GroxVillagersAI implements ModInitializer {
             )
         );
 
+        // Listen to ordinary player chat. Villagers decide independently whether to react.
+        ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
+            String chat = message.getContent().getString().trim();
+            if (!chat.isEmpty()) handleOrdinaryChat(sender, chat);
+        });
+
         ServerTickEvents.END_WORLD_TICK.register(world -> {
             if (++tickCounter % 40 != 0) return;
             for (ServerPlayerEntity player : world.getPlayers()) {
@@ -94,6 +103,91 @@ public class GroxVillagersAI implements ModInitializer {
                 }
             }
         });
+    }
+
+
+    private static void handleOrdinaryChat(ServerPlayerEntity player, String rawMessage) {
+        ServerWorld world = player.getServerWorld();
+        String message = rawMessage.toLowerCase(Locale.ROOT);
+        String action = null;
+
+        if (containsAny(message, "смотрите на меня", "посмотрите на меня", "смотри на меня",
+                "посмотри на меня", "все смотрите сюда", "все ко мне")) {
+            action = "look";
+        } else if (containsAny(message, "посмотри налево", "смотри налево", "повернись налево")) {
+            action = "left";
+        } else if (containsAny(message, "подними руку", "поднимите руку", "помаши", "помашите",
+                "помахай")) {
+            action = "hand";
+        } else if (containsAny(message, "сядь", "садитесь", "присядь")) {
+            action = "sit";
+        }
+
+        boolean addressedToVillagers = action != null || containsAny(message,
+                "эй жители", "эй, жители", "жители", "привет", "здравствуйте", "как дела");
+        if (!addressedToVillagers) return;
+
+        List<VillagerEntity> nearby = world.getEntitiesByClass(VillagerEntity.class,
+                player.getBoundingBox().expand(24), v -> v.isAlive());
+        nearby.sort((a, b) -> Double.compare(a.squaredDistanceTo(player), b.squaredDistanceTo(player)));
+
+        int replies = 0;
+        for (VillagerEntity villager : nearby) {
+            GroxMemory m = memory(world, villager);
+            int chance = 22 + m.bravery / 5 + m.trust / 3 + m.social / 5
+                    + m.curiosity / 8 - m.fear / 3;
+            chance = Math.max(5, Math.min(95, chance));
+            if (ThreadLocalRandom.current().nextInt(100) >= chance) continue;
+
+            m.interactions++;
+            m.social = Math.min(100, m.social + 1);
+            m.curiosity = Math.min(100, m.curiosity + 1);
+
+            String reply;
+            if ("look".equals(action)) {
+                villager.getLookControl().lookAt(player, 30.0F, 30.0F);
+                reply = choose(m,
+                        "Хорошо, я смотрю на тебя.",
+                        "Я заметил тебя!",
+                        "Слушаю внимательно.",
+                        "Я повернулся. Что случилось?");
+            } else if ("left".equals(action)) {
+                villager.setYaw(villager.getYaw() - 45.0F);
+                reply = choose(m, "Повернулся налево.", "Сейчас посмотрю туда.", "Хорошо, проверю эту сторону.");
+            } else if ("hand".equals(action)) {
+                reply = choose(m,
+                        "Я услышал просьбу. Пока я не умею отдельно анимировать руки.",
+                        "Я бы помахал, но анимация рук ещё не готова.",
+                        "Понял тебя! Движения рук добавим отдельным этапом.");
+            } else if ("sit".equals(action)) {
+                reply = choose(m,
+                        "Я услышал тебя. Отдельная анимация сидения ещё не подключена.",
+                        "Пока я не умею садиться по команде, но понял просьбу.",
+                        "Эту позу добавим, когда появится собственная система анимаций.");
+            } else {
+                reply = GroxDialogue.answer(rawMessage, m, villager);
+            }
+
+            if (m.fear > 70 && action != null) {
+                reply = choose(m, "Я немного напуган и пока не решаюсь.", "Давай сначала убедимся, что всё спокойно.");
+            } else if (ThreadLocalRandom.current().nextInt(100) > Math.min(95, 35 + m.bravery / 2 + m.trust / 4)) {
+                reply = choose(m, "Я услышал, но пока останусь здесь.", "Не сейчас, пожалуйста.", "Я пока понаблюдаю со стороны.");
+            }
+
+            player.sendMessage(Text.literal("§6[" + villager.getName().getString() + "] §f" + reply), false);
+            if (action != null) m.remember("Игрок попросил: " + action);
+            markStoreDirty(world);
+            if (++replies >= 4) break; // Keep chat readable in large villages.
+        }
+    }
+
+    private static boolean containsAny(String text, String... fragments) {
+        for (String fragment : fragments) if (text.contains(fragment)) return true;
+        return false;
+    }
+
+    private static String choose(GroxMemory memory, String... lines) {
+        return lines[ThreadLocalRandom.current().nextInt(lines.length)];
     }
 
     private static void updateRelationship(String message, GroxMemory m) {
