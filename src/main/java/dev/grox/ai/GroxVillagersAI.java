@@ -54,7 +54,7 @@ public class GroxVillagersAI implements ModInitializer {
                     m.remember("Игрок: " + message);
                     m.trust = Math.min(100, m.trust + 1);
                     m.mood = Math.min(100, m.mood + 1);
-                    m.markDirty();
+                    markStoreDirty(world);
                     String answer = GroxDialogue.answer(message, m, villager);
                     context.getSource().sendFeedback(() -> Text.literal("§6[Грокс] §f" + answer), false);
                     return 1;
@@ -77,6 +77,12 @@ public class GroxVillagersAI implements ModInitializer {
         GroxMemoryStore store = world.getPersistentStateManager().getOrCreate(
                 GroxMemoryStore::fromNbt, GroxMemoryStore::new, "grox_villager_memories");
         return store.get(villager.getUuid());
+    }
+
+    private static void markStoreDirty(ServerWorld world) {
+        GroxMemoryStore store = world.getPersistentStateManager().getOrCreate(
+                GroxMemoryStore::fromNbt, GroxMemoryStore::new, "grox_villager_memories");
+        store.markDirty();
     }
 
     private static void think(ServerWorld world, VillagerEntity villager) {
@@ -102,6 +108,6 @@ public class GroxVillagersAI implements ModInitializer {
             if (m.fear > 0) m.fear = Math.max(0, m.fear - 2);
             if (m.mood < 75) m.mood++;
         }
-        m.markDirty();
+        markStoreDirty(world);
     }
 }
