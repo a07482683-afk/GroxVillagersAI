@@ -32,3 +32,11 @@ GitHub Actions собирает мод автоматически на Java 17. 
 
 ## Важно
 Диалоги — офлайн-система на правилах и комбинировании фраз, а не полноценная языковая модель ChatGPT. Количество сочетаний превышает десять миллионов, но ответы могут иногда звучать неестественно.
+
+
+## Ordinary chat reactions (new)
+- Villagers listen to normal player chat; no `/grox` command is needed for supported phrases.
+- Nearby villagers make separate response decisions based on bravery, trust, fear, curiosity and sociability.
+- Supported physical reactions at this stage: looking toward the player and turning left.
+- Requests to wave, raise a hand or sit are recognized, but those limb/pose animations are not implemented yet. They require a custom villager model and animation renderer.
+- To avoid flooding chat, at most four nearby villagers answer one message.
