@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.mob.HostileEntity;
@@ -13,7 +14,6 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.Box;
-import net.minecraft.world.PersistentState;
 import java.util.List;
 
 import static net.minecraft.server.command.CommandManager.argument;
@@ -24,16 +24,32 @@ public class GroxVillagersAI implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        // Left-click: talk to the villager instead of hurting it.
+        // Sneak + left-click: show personality stats (works in Survival too).
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (world.isClient || !(entity instanceof VillagerEntity villager)) return ActionResult.PASS;
+            ServerWorld serverWorld = (ServerWorld) world;
+            GroxMemory m = memory(serverWorld, villager);
+            if (player.isSneaking()) {
+                sendStats(player, m);
+            } else {
+                m.interactions++;
+                m.remember("Игрок подошёл и заговорил.");
+                markStoreDirty(serverWorld);
+                String answer = GroxDialogue.greeting(m, villager);
+                player.sendMessage(Text.literal("§6[Житель] §f" + answer), false);
+            }
+            return ActionResult.SUCCESS;
+        });
+
+        // Normal right-click is deliberately passed to Minecraft so trading,
+        // profession screens and other vanilla villager interactions still work.
+        // Sneak + right-click remains a quick personality panel.
         UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
             if (world.isClient || !(entity instanceof VillagerEntity villager)) return ActionResult.PASS;
-            GroxMemory memory = memory((ServerWorld) world, villager);
-            if (player.isSneaking()) {
-                player.sendMessage(Text.literal("§6[Грокс] §fХарактер: смелость " + memory.bravery
-                        + ", доверие " + memory.trust + ", страх " + memory.fear
-                        + ", настроение " + memory.mood), false);
-            } else {
-                player.sendMessage(Text.literal("§6[Житель] §f" + GroxDialogue.answer("привет", memory, villager)), false);
-            }
+            if (!player.isSneaking()) return ActionResult.PASS;
+            GroxMemory m = memory((ServerWorld) world, villager);
+            sendStats(player, m);
             return ActionResult.SUCCESS;
         });
 
@@ -52,11 +68,12 @@ public class GroxVillagersAI implements ModInitializer {
                     GroxMemory m = memory(world, villager);
                     String message = StringArgumentType.getString(context, "message");
                     m.remember("Игрок: " + message);
+                    m.interactions++;
                     m.trust = Math.min(100, m.trust + 1);
                     m.mood = Math.min(100, m.mood + 1);
                     markStoreDirty(world);
                     String answer = GroxDialogue.answer(message, m, villager);
-                    context.getSource().sendFeedback(() -> Text.literal("§6[Грокс] §f" + answer), false);
+                    context.getSource().sendFeedback(() -> Text.literal("§6[" + villager.getName().getString() + "] §f" + answer), false);
                     return 1;
                 }))
             )
@@ -71,6 +88,12 @@ public class GroxVillagersAI implements ModInitializer {
                 }
             }
         });
+    }
+
+    private static void sendStats(net.minecraft.server.network.ServerPlayerEntity player, GroxMemory memory) {
+        player.sendMessage(Text.literal("§6[Грокс] §fХарактер: смелость " + memory.bravery
+                + ", доверие " + memory.trust + ", страх " + memory.fear
+                + ", настроение " + memory.mood + ", разговоров " + memory.interactions), false);
     }
 
     private static GroxMemory memory(ServerWorld world, VillagerEntity villager) {
