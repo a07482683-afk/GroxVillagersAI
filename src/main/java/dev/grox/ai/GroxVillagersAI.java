@@ -5,6 +5,8 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.util.Identifier;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.entity.Entity;
@@ -29,6 +31,7 @@ import static net.minecraft.server.command.CommandManager.literal;
 public class GroxVillagersAI implements ModInitializer {
     private static int tickCounter = 0;
     private static final Map<UUID, String> PLAYER_LANGUAGES = new HashMap<>();
+    public static final Identifier STOP_REQUEST = new Identifier("groxvillagersai", "stop_request");
 
     @Override
     public void onInitialize() {
@@ -64,34 +67,6 @@ public class GroxVillagersAI implements ModInitializer {
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-            dispatcher.register(literal("grox")
-                .then(argument("message", StringArgumentType.greedyString()).executes(context -> {
-                    ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
-                    ServerWorld world = player.getServerWorld();
-                    List<VillagerEntity> nearby = world.getEntitiesByClass(VillagerEntity.class,
-                            player.getBoundingBox().expand(16), v -> v.isAlive());
-                    if (nearby.isEmpty()) {
-                        context.getSource().sendFeedback(() -> Text.literal("§cРядом нет жителей."), false);
-                        return 0;
-                    }
-                    VillagerEntity villager = nearby.get(0);
-                    GroxMemory m = memory(world, villager);
-                    String message = StringArgumentType.getString(context, "message");
-                    m.remember("Игрок: " + message);
-                    m.interactions++;
-                    m.social = Math.min(100, m.social + 3);
-                    m.curiosity = Math.min(100, m.curiosity + 2);
-                    updateRelationship(message, m);
-                    markStoreDirty(world);
-                    String answer = GroxDialogue.answer(message, m, villager);
-                    context.getSource().sendFeedback(() -> Text.literal("§6["
-                            + villager.getName().getString() + "] §f" + answer), false);
-                    return 1;
-                }))
-            )
-        );
-
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
             dispatcher.register(literal("groxlang")
                 .then(argument("code", StringArgumentType.word()).executes(context -> {
                     ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
@@ -106,6 +81,11 @@ public class GroxVillagersAI implements ModInitializer {
                 }))
             )
         );
+
+        ServerPlayNetworking.registerGlobalReceiver(STOP_REQUEST, (server, player, handler, buf, responseSender) -> {
+            UUID villagerId = buf.readUuid();
+            server.execute(() -> handleStopRequest(player, villagerId));
+        });
 
         // Listen to ordinary player chat. Villagers decide independently whether to react.
         ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
@@ -125,6 +105,30 @@ public class GroxVillagersAI implements ModInitializer {
         });
     }
 
+
+    private static void handleStopRequest(ServerPlayerEntity player, UUID villagerId) {
+        Entity entity = player.getServerWorld().getEntity(villagerId);
+        if (!(entity instanceof VillagerEntity villager) || !villager.isAlive()
+                || villager.squaredDistanceTo(player) > 36.0) return;
+        GroxMemory m = memory(player.getServerWorld(), villager);
+        String language = PLAYER_LANGUAGES.getOrDefault(player.getUuid(), "ru");
+        boolean listens = m.fear < 75 && ThreadLocalRandom.current().nextInt(100)
+                < Math.max(8, Math.min(95, 35 + m.trust / 2 + m.bravery / 4 - m.fear / 2));
+        if (listens) {
+            m.interactions++;
+            m.social = Math.min(100, m.social + 2);
+            m.trust = Math.min(100, m.trust + 1);
+            m.remember("Игрок попросил остановиться и поговорить.");
+            villager.getNavigation().stop();
+            villager.getLookControl().lookAt(player, 30.0F, 30.0F);
+            player.sendMessage(Text.literal("§6[" + villager.getName().getString() + "] §f"
+                    + GroxLanguage.stopResponse(language, true)), false);
+        } else {
+            player.sendMessage(Text.literal("§6[" + villager.getName().getString() + "] §f"
+                    + GroxLanguage.stopResponse(language, false)), false);
+        }
+        markStoreDirty(player.getServerWorld());
+    }
 
     private static void handleOrdinaryChat(ServerPlayerEntity player, String rawMessage) {
         ServerWorld world = player.getServerWorld();
