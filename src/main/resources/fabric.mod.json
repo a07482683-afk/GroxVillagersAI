@@ -8,7 +8,8 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.grox.ai.GroxVillagersAI"]
+    "main": ["dev.grox.ai.GroxVillagersAI"],
+    "client": ["dev.grox.ai.GroxVillagersAIClient"]
   },
   "depends": {
     "fabricloader": ">=0.15.0",
