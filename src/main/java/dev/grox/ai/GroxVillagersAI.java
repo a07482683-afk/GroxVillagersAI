@@ -17,6 +17,9 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.Box;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.UUID;
 import java.util.Locale;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -25,6 +28,7 @@ import static net.minecraft.server.command.CommandManager.literal;
 
 public class GroxVillagersAI implements ModInitializer {
     private static int tickCounter = 0;
+    private static final Map<UUID, String> PLAYER_LANGUAGES = new HashMap<>();
 
     @Override
     public void onInitialize() {
@@ -82,6 +86,22 @@ public class GroxVillagersAI implements ModInitializer {
                     String answer = GroxDialogue.answer(message, m, villager);
                     context.getSource().sendFeedback(() -> Text.literal("§6["
                             + villager.getName().getString() + "] §f" + answer), false);
+                    return 1;
+                }))
+            )
+        );
+
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+            dispatcher.register(literal("groxlang")
+                .then(argument("code", StringArgumentType.word()).executes(context -> {
+                    ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
+                    String code = StringArgumentType.getString(context, "code").toLowerCase(Locale.ROOT);
+                    if (!GroxLanguage.supported(code)) {
+                        context.getSource().sendFeedback(() -> Text.literal("§cКоды языков: " + GroxLanguage.languageList()), false);
+                        return 0;
+                    }
+                    PLAYER_LANGUAGES.put(player.getUuid(), code);
+                    context.getSource().sendFeedback(() -> Text.literal("§aЯзык жителей установлен: " + code), false);
                     return 1;
                 }))
             )
@@ -252,6 +272,31 @@ public class GroxVillagersAI implements ModInitializer {
 
         // Update the saved emotional state; visual rendering is a separate upcoming stage.
         m.updateExpression();
+
+        // Independent village chatter: a villager may comment when a player walks nearby.
+        if (world.getTime() % 200 == 0) {
+            ServerPlayerEntity passerby = null;
+            double nearestDistance = 8.0 * 8.0;
+            for (ServerPlayerEntity candidate : world.getPlayers()) {
+                double distance = candidate.squaredDistanceTo(villager);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    passerby = candidate;
+                }
+            }
+            int talkChance = Math.min(30, 5 + m.social / 8 + m.curiosity / 10);
+            if (passerby != null && ThreadLocalRandom.current().nextInt(100) < talkChance) {
+                String language = PLAYER_LANGUAGES.getOrDefault(passerby.getUuid(), "ru");
+                String comment = ThreadLocalRandom.current().nextBoolean()
+                        ? GroxLanguage.passingComment(language)
+                        : GroxLanguage.idleComment(language);
+                passerby.sendMessage(Text.literal("§6[" + villager.getName().getString()
+                        + "] §f" + comment), false);
+                m.interactions++;
+                m.remember("Самостоятельно прокомментировал прохожего.");
+                markStoreDirty(world);
+            }
+        }
 
         // Social stage: nearby villagers gradually become more sociable.
         if (world.getTime() % 200 == 0) {
