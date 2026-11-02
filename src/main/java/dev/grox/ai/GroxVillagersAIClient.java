@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.PacketByteBufs;
@@ -18,6 +19,7 @@ public final class GroxVillagersAIClient implements ClientModInitializer {
     public void onInitializeClient() {
         stopAndTalkKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.groxvillagersai.stop_and_talk",
+                InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_F,
                 "category.groxvillagersai"
         ));
