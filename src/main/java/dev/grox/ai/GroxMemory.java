@@ -15,6 +15,9 @@ public final class GroxMemory {
     public int social;
     public int curiosity;
     public long lastThreat;
+    // Expression state is stored now; the renderer will display it in a later visual stage.
+    public String expression = "neutral";
+    public int expressionTicks = 0;
     public final List<String> memories = new ArrayList<>();
 
     public GroxMemory(UUID id) {
@@ -26,6 +29,23 @@ public final class GroxMemory {
         this.interactions = 0;
         this.social = 35;
         this.curiosity = 40 + Math.floorMod(id.hashCode() * 31, 61);
+    }
+
+    public void setExpression(String value, int ticks) {
+        this.expression = value;
+        this.expressionTicks = Math.max(0, ticks);
+    }
+
+    public void updateExpression() {
+        if (expressionTicks > 0) {
+            expressionTicks--;
+            return;
+        }
+        if (fear >= 60) expression = "afraid";
+        else if (trust <= 12 && mood <= 25) expression = "angry";
+        else if (mood <= 25) expression = "sad";
+        else if (mood >= 75) expression = "happy";
+        else expression = "neutral";
     }
 
     public void remember(String text) {
@@ -44,6 +64,8 @@ public final class GroxMemory {
         n.putInt("Social", social);
         n.putInt("Curiosity", curiosity);
         n.putLong("LastThreat", lastThreat);
+        n.putString("Expression", expression);
+        n.putInt("ExpressionTicks", expressionTicks);
         n.putInt("MemoryCount", memories.size());
         for (int i = 0; i < memories.size(); i++) n.putString("Memory" + i, memories.get(i));
         return n;
@@ -60,6 +82,8 @@ public final class GroxMemory {
         m.social = n.contains("Social") ? n.getInt("Social") : 35;
         m.curiosity = n.contains("Curiosity") ? n.getInt("Curiosity") : 50;
         m.lastThreat = n.getLong("LastThreat");
+        m.expression = n.contains("Expression") ? n.getString("Expression") : "neutral";
+        m.expressionTicks = n.contains("ExpressionTicks") ? Math.max(0, n.getInt("ExpressionTicks")) : 0;
         int count = Math.min(64, n.getInt("MemoryCount"));
         for (int i = 0; i < count; i++) m.memories.add(n.getString("Memory" + i));
         return m;
