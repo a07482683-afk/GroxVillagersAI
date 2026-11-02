@@ -232,8 +232,10 @@ public class GroxVillagersAI implements ModInitializer {
                 villager.getBoundingBox().expand(10), e -> e.isAlive());
         if (!threats.isEmpty()) {
             Entity threat = threats.get(0);
+            boolean newThreat = m.lastThreat == 0 || world.getTime() - m.lastThreat > 200;
             m.lastThreat = world.getTime();
             m.fear = Math.min(100, m.fear + 12);
+            if (newThreat) m.setExpression("surprised", 3);
             m.mood = Math.max(0, m.mood - 3);
             m.remember("Почувствовал опасность рядом.");
             if (m.bravery < 65 || m.fear > 55) {
@@ -247,6 +249,9 @@ public class GroxVillagersAI implements ModInitializer {
             if (m.fear > 0) m.fear = Math.max(0, m.fear - 2);
             if (m.mood < 75) m.mood++;
         }
+
+        // Update the saved emotional state; visual rendering is a separate upcoming stage.
+        m.updateExpression();
 
         // Social stage: nearby villagers gradually become more sociable.
         if (world.getTime() % 200 == 0) {
