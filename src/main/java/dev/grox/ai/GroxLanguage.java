@@ -50,6 +50,28 @@ public final class GroxLanguage {
         return pick(code, lines);
     }
 
+    public static String stopResponse(String code, boolean listens) {
+        String[][] lines = {
+            {"Хорошо, я остановился. Говори, я слушаю.", "Извини, я занят и сейчас не могу остановиться."},
+            {"Хуб, истодам. Гап зан, гӯш мекунам.", "Бубахш, ҳоло банд ҳастам ва истода наметавонам."},
+            {"All right, I stopped. I'm listening.", "Sorry, I'm busy and can't stop right now."},
+            {"De acuerdo, me detuve. Te escucho.", "Lo siento, estoy ocupado y no puedo parar ahora."},
+            {"D'accord, je m'arrête. Je t'écoute.", "Désolé, je suis occupé et je ne peux pas m'arrêter."},
+            {"In Ordnung, ich halte an. Ich höre zu.", "Tut mir leid, ich bin beschäftigt und kann gerade nicht anhalten."},
+            {"Está bem, parei. Estou ouvindo.", "Desculpe, estou ocupado e não posso parar agora."},
+            {"حسناً، توقفت. أنا أستمع إليك.", "عذراً، أنا مشغول ولا أستطيع التوقف الآن."},
+            {"好吧，我停下来了。我在听。", "抱歉，我正忙，现在不能停下来。"},
+            {"ठीक है, मैं रुक गया। मैं सुन रहा हूँ।", "माफ़ करना, मैं व्यस्त हूँ और अभी नहीं रुक सकता।"},
+            {"わかった、止まったよ。話を聞くよ。", "ごめん、今は忙しくて止まれない。"}
+        };
+        int index = switch (code.toLowerCase()) {
+            case "tg" -> 1; case "en" -> 2; case "es" -> 3; case "fr" -> 4;
+            case "de" -> 5; case "pt" -> 6; case "ar" -> 7; case "zh" -> 8;
+            case "hi" -> 9; case "ja" -> 10; default -> 0;
+        };
+        return lines[index][listens ? 0 : 1];
+    }
+
     private static String pick(String code, String[][] table) {
         int index = switch (code.toLowerCase()) {
             case "tg" -> 1; case "en" -> 2; case "es" -> 3; case "fr" -> 4;
