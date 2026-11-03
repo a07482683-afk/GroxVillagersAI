@@ -22,8 +22,18 @@ jobs:
           gradle-version: 8.6
       - name: Build mod
         run: gradle build
-      - name: Upload mod JAR
+      - name: Prepare only the runnable mod JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_JAR="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
+          test -n "$MAIN_JAR"
+          mkdir -p build/release
+          cp "$MAIN_JAR" build/release/GroxVillagersAI-1.20.1.jar
+          jar tf build/release/GroxVillagersAI-1.20.1.jar | grep -q '^dev/grox/ai/GroxVillagersAI.class$'
+          unzip -p build/release/GroxVillagersAI-1.20.1.jar fabric.mod.json | grep -q '"version": "0.1.5"'
+      - name: Upload runnable mod JAR
         uses: actions/upload-artifact@v4
         with:
           name: GroxVillagersAI-1.20.1
-          path: build/libs/*.jar
+          path: build/release/GroxVillagersAI-1.20.1.jar
