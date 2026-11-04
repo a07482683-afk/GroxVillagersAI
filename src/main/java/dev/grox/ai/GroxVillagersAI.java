@@ -147,12 +147,10 @@ public class GroxVillagersAI implements ModInitializer {
             action = "sit";
         }
 
-        boolean addressedToVillagers = action != null || containsAny(message,
-                "эй жители", "эй, жители", "жители", "привет", "здравствуйте", "как дела");
-        if (!addressedToVillagers) return;
-
+        // Treat ordinary nearby player chat as conversation; no special addressing phrase is required.
         List<VillagerEntity> nearby = world.getEntitiesByClass(VillagerEntity.class,
-                player.getBoundingBox().expand(24), v -> v.isAlive());
+                player.getBoundingBox().expand(12), v -> v.isAlive());
+        if (nearby.isEmpty() || message.isEmpty()) return;
         nearby.sort((a, b) -> Double.compare(a.squaredDistanceTo(player), b.squaredDistanceTo(player)));
 
         int replies = 0;
@@ -166,6 +164,8 @@ public class GroxVillagersAI implements ModInitializer {
             m.interactions++;
             m.social = Math.min(100, m.social + 1);
             m.curiosity = Math.min(100, m.curiosity + 1);
+            updateRelationship(message, m);
+            m.remember("Игрок сказал: " + rawMessage.substring(0, Math.min(80, rawMessage.length())));
 
             String reply;
             if ("look".equals(action)) {
@@ -201,7 +201,7 @@ public class GroxVillagersAI implements ModInitializer {
             player.sendMessage(Text.literal("§6[" + villager.getName().getString() + "] §f" + reply), false);
             if (action != null) m.remember("Игрок попросил: " + action);
             markStoreDirty(world);
-            if (++replies >= 4) break; // Keep chat readable in large villages.
+            if (++replies >= 3) break; // Keep chat readable in large villages.
         }
     }
 
