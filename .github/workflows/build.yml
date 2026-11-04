@@ -31,7 +31,9 @@ jobs:
           mkdir -p build/release
           cp "$MAIN_JAR" build/release/GroxVillagersAI-1.20.1.jar
           jar tf build/release/GroxVillagersAI-1.20.1.jar | grep -q '^dev/grox/ai/GroxVillagersAI.class$'
-          unzip -p build/release/GroxVillagersAI-1.20.1.jar fabric.mod.json | grep -q '"version": "0.1.5"'
+          EXPECTED_VERSION="$(sed -n 's/^mod_version=//p' gradle.properties | head -n 1)"
+          test -n "$EXPECTED_VERSION"
+          unzip -p build/release/GroxVillagersAI-1.20.1.jar fabric.mod.json | grep -Fq "\"version\": \"$EXPECTED_VERSION\""
       - name: Upload runnable mod JAR
         uses: actions/upload-artifact@v4
         with:
