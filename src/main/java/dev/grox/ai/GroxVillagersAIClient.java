@@ -2,6 +2,7 @@ package dev.grox.ai;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.option.KeyBinding;
@@ -17,6 +18,8 @@ public final class GroxVillagersAIClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        GroxVoice.initialize();
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> GroxVoice.onGameMessage(message));
         stopAndTalkKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.groxvillagersai.stop_and_talk",
                 InputUtil.Type.KEYSYM,
