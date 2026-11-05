@@ -13,7 +13,6 @@ import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.Box;
 
 import java.util.List;
@@ -255,11 +254,10 @@ public class GroxVillagersAI implements ModInitializer {
                 }
             }
             int talkChance = Math.min(30, 5 + m.social / 8 + m.curiosity / 10);
-            if (passerby != null) {
-                long lastComment = PLAYER_PASSING_COOLDOWN.getOrDefault(passerby.getUuid(), Long.MIN_VALUE / 2);
-                if (world.getTime() - lastComment < 300) continue; // At most one ambient comment every 15 seconds.
-            }
-            if (passerby != null && ThreadLocalRandom.current().nextInt(100) < talkChance) {
+            boolean commentCooldownPassed = passerby != null
+                    && world.getTime() - PLAYER_PASSING_COOLDOWN.getOrDefault(
+                            passerby.getUuid(), Long.MIN_VALUE / 2) >= 300;
+            if (commentCooldownPassed && ThreadLocalRandom.current().nextInt(100) < talkChance) {
                 PLAYER_PASSING_COOLDOWN.put(passerby.getUuid(), world.getTime());
                 String language = PLAYER_LANGUAGES.getOrDefault(passerby.getUuid(), "ru");
                 String comment = ThreadLocalRandom.current().nextBoolean()
