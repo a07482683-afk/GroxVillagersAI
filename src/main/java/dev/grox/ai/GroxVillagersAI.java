@@ -35,30 +35,9 @@ public class GroxVillagersAI implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        // Left-click is deliberately not a conversation action anymore.
+        // Keep only one creative-mode sneak + left-click gesture for villager statistics.
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (world.isClient || !(entity instanceof VillagerEntity villager)
-                    || !(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
-
-            if (serverPlayer.isSneaking()) {
-                if (!serverPlayer.isCreative()) return ActionResult.PASS;
-                sendStats(serverPlayer, memory((ServerWorld) world, villager));
-                return ActionResult.SUCCESS;
-            }
-
-            ServerWorld serverWorld = (ServerWorld) world;
-            GroxMemory m = memory(serverWorld, villager);
-            m.interactions++;
-            m.social = Math.min(100, m.social + 2);
-            m.curiosity = Math.min(100, m.curiosity + 1);
-            m.remember("Игрок подошёл и начал разговор.");
-            m.trust = Math.min(100, m.trust + 1);
-            markStoreDirty(serverWorld);
-            serverPlayer.sendMessage(Text.literal("§6[" + villager.getName().getString()
-                    + "] §f" + GroxDialogue.greeting(m, villager)), false);
-            return ActionResult.SUCCESS;
-        });
-
-        UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
             if (world.isClient || !(entity instanceof VillagerEntity villager)
                     || !(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
             if (!serverPlayer.isSneaking() || !serverPlayer.isCreative()) return ActionResult.PASS;
