@@ -7,8 +7,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.util.Identifier;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.passive.VillagerEntity;
@@ -31,19 +29,13 @@ import static net.minecraft.server.command.CommandManager.literal;
 public class GroxVillagersAI implements ModInitializer {
     private static int tickCounter = 0;
     private static final Map<UUID, String> PLAYER_LANGUAGES = new HashMap<>();
+    private static final Map<UUID, Long> PLAYER_CHAT_COOLDOWN = new HashMap<>();
+    private static final Map<UUID, Long> PLAYER_PASSING_COOLDOWN = new HashMap<>();
     public static final Identifier STOP_REQUEST = new Identifier("groxvillagersai", "stop_request");
 
     @Override
     public void onInitialize() {
-        // Left-click is deliberately not a conversation action anymore.
-        // Keep only one creative-mode sneak + left-click gesture for villager statistics.
-        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (world.isClient || !(entity instanceof VillagerEntity villager)
-                    || !(player instanceof ServerPlayerEntity serverPlayer)) return ActionResult.PASS;
-            if (!serverPlayer.isSneaking() || !serverPlayer.isCreative()) return ActionResult.PASS;
-            sendStats(serverPlayer, memory((ServerWorld) world, villager));
-            return ActionResult.SUCCESS;
-        });
+        // No mouse-click interaction is registered: attacks and fast clicks never trigger chat or stats.
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
             dispatcher.register(literal("groxlang")
@@ -111,6 +103,10 @@ public class GroxVillagersAI implements ModInitializer {
 
     private static void handleOrdinaryChat(ServerPlayerEntity player, String rawMessage) {
         ServerWorld world = player.getServerWorld();
+        long now = world.getTime();
+        long previousChat = PLAYER_CHAT_COOLDOWN.getOrDefault(player.getUuid(), Long.MIN_VALUE / 2);
+        if (now - previousChat < 60) return; // One response cycle every 3 seconds.
+        PLAYER_CHAT_COOLDOWN.put(player.getUuid(), now);
         String message = rawMessage.toLowerCase(Locale.ROOT);
         String action = null;
 
@@ -132,7 +128,6 @@ public class GroxVillagersAI implements ModInitializer {
         if (nearby.isEmpty() || message.isEmpty()) return;
         nearby.sort((a, b) -> Double.compare(a.squaredDistanceTo(player), b.squaredDistanceTo(player)));
 
-        int replies = 0;
         for (VillagerEntity villager : nearby) {
             GroxMemory m = memory(world, villager);
             int chance = 22 + m.bravery / 5 + m.trust / 3 + m.social / 5
@@ -180,7 +175,7 @@ public class GroxVillagersAI implements ModInitializer {
             player.sendMessage(Text.literal("§6[" + villager.getName().getString() + "] §f" + reply), false);
             if (action != null) m.remember("Игрок попросил: " + action);
             markStoreDirty(world);
-            if (++replies >= 3) break; // Keep chat readable in large villages.
+            break; // Exactly one villager may answer a player message.
         }
     }
 
@@ -207,14 +202,6 @@ public class GroxVillagersAI implements ModInitializer {
         } else {
             m.mood = Math.min(100, m.mood + 1);
         }
-    }
-
-    private static void sendStats(ServerPlayerEntity player, GroxMemory memory) {
-        player.sendMessage(Text.literal("§6[Грокс] §fСмелость: " + memory.bravery
-                + " | Доверие: " + memory.trust + " | Страх: " + memory.fear
-                + " | Настроение: " + memory.mood + " | Общительность: " + memory.social
-                + " | Любопытство: " + memory.curiosity
-                + " | Разговоров: " + memory.interactions), false);
     }
 
     private static GroxMemory memory(ServerWorld world, VillagerEntity villager) {
@@ -268,7 +255,12 @@ public class GroxVillagersAI implements ModInitializer {
                 }
             }
             int talkChance = Math.min(30, 5 + m.social / 8 + m.curiosity / 10);
+            if (passerby != null) {
+                long lastComment = PLAYER_PASSING_COOLDOWN.getOrDefault(passerby.getUuid(), Long.MIN_VALUE / 2);
+                if (world.getTime() - lastComment < 300) continue; // At most one ambient comment every 15 seconds.
+            }
             if (passerby != null && ThreadLocalRandom.current().nextInt(100) < talkChance) {
+                PLAYER_PASSING_COOLDOWN.put(passerby.getUuid(), world.getTime());
                 String language = PLAYER_LANGUAGES.getOrDefault(passerby.getUuid(), "ru");
                 String comment = ThreadLocalRandom.current().nextBoolean()
                         ? GroxLanguage.passingComment(language)
